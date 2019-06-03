@@ -164,9 +164,6 @@ def get_account_power_over_time(): # return time to power to proxied power
     for hit in response:
         results.append(hit.to_dict())
     json = jsonify(results)
-
-    
-
     return json
 
 @app.route('/get_voted_workers_over_time')
