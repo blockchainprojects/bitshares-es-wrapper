@@ -9,6 +9,8 @@ from elasticsearch_dsl.exceptions import IllegalOperation
 
 from flasgger import Swagger
 
+import json
+
 es = Elasticsearch(timeout=60)
 app = Flask(__name__)
 from flask_cors import CORS, cross_origin
@@ -152,32 +154,118 @@ def get_account_power_over_time(): # return time to power to proxied power
 
     #from_      = request.args.get('from', ) # current_time
     #to_        = request.args.get('to', ) # 2 years back
-    account = request.args.get('id', "1.2.17")
+    account = request.args.get( "account", "1.2.17" ) # account_id
 
-    s = Search(using=es, index="objects-voting-statistics") #, extra={"size": size, "from": from_})
+    s = Search( using=es, index="objects-voting-statistics" )
+    s.query = Q( "match", account=account )
 
-    q = Q("match", account=account)
-
-    s.query = q
     response = s.execute()
-    results = []
+    json_obj = []
     for hit in response:
-        results.append(hit.to_dict())
-    json = jsonify(results)
-    return json
+        json_obj.append( hit.to_dict() )
+    
+    for hit in json_obj:
+        del hit["account"]
+        del hit["object_id"]
+        del hit["votes"]
+        del hit["id"]
+    
+    return jsonify( json_obj )
 
 @app.route('/get_voted_workers_over_time')
 def get_voted_workers_over_time(): # returns worker voted by this account over time
-    # account_id
-    pass
+    
+    #from_      = request.args.get('from', ) # current_time
+    #to_        = request.args.get('to', ) # 2 years back
+    account = request.args.get( "account", "1.2.17" ) # account_id
+
+    s = Search( using=es, index="objects-voting-statistics" )
+    s.query = Q( "match", account=account )
+
+    response = s.execute()
+    json_obj = []
+    for hit in response:
+        json_obj.append( hit.to_dict() )
+    
+    for hit in json_obj:
+        del hit["account"]
+        del hit["object_id"]
+        del hit["id"]
+        del hit["proxy"]
+        del hit["stake"]
+        del hit["proxy_for"]
+
+    return jsonify( json_obj )
 
 @app.route('/get_worker_power_over_time')
 def get_worker_power_over_time(): # returns the voting power of a worker over time with each account voted for him
-    # vote_id
-    pass
+    #from_      = request.args.get('from', ) # current_time
+    #to_        = request.args.get('to', ) # 2 years back
+    vote_id = request.args.get('vote_id', '1:0') # account_id
 
+    s = Search( using=es, index="objects-voting-statistics" )
+    #s.query = Q( "match_all" ) #, vote_id=vote_id )
+
+    response = s.execute()
+    json_obj = []
+    for hit in response:
+        json_obj.append( hit.to_dict() )
+    
+    filtered_obj_clean = \
+    {
+        "block_number" : 0, 
+        "block_time": "",
+        "proxied" : 
+        [
+        ] 
+    }
+    json_filtered = []
+
+    print("SEARCHED: " + str(vote_id) )
+    for hit in json_obj:
+        
+        if vote_id in hit["votes"]: # only calculate when we find the given vote id
+            filtered_already_exists = False
+            for filtered in json_filtered: # before creating objects look for existing ones 
+                if filtered["block_number"] == hit["block_number"]: # when an obj already exists
+                    stake = 0 # start calculating the stake 
+                    if hit["proxy"] == "1.2.5": # 1.2.5 == GRAPHENE_PROXY_TO_SELF only add the own stake when the account has no proxy
+                        stake += hit["stake"]
+                    for proxied_account_to_stake_pair in hit["proxy_for"]:
+                        print(proxied_account_to_stake_pair[1])
+                        stake += int(proxied_account_to_stake_pair[1])
+                    
+                    if stake == 0:
+                        filtered_already_exists = True
+                        break
+                    filtered["proxied"].append({ "proxee" : hit["account"], 
+                        "stake" : stake })
+                    filtered_already_exists = True
+                    break
+            if filtered_already_exists:
+                continue
+
+            stake = 0
+            if hit["proxy"] == "1.2.5": # 1.2.5 == GRAPHENE_PROXY_TO_SELF only add the own stake when the account has no proxy
+                stake += hit["stake"]
+            for proxied_account_to_stake_pair in hit["proxy_for"]: # accumulate all proxied stakes and add them
+                print(proxied_account_to_stake_pair[1])
+                stake += int(proxied_account_to_stake_pair[1])
+            if stake == 0: # skip when no stake was accumulated
+                continue
+            
+            # create a new filtered_obj and add it the list of filtered objects
+            filtered_obj = filtered_obj = { "block_number" : 0, 
+                "block_time": "", "proxied" : [] }
+            filtered_obj["block_number"] = hit["block_number"]
+            filtered_obj["block_time"] = hit["block_time"]
+            filtered_obj["proxied"].append( { "proxee" : hit["account"],
+                "stake" : stake } )
+            json_filtered.append( filtered_obj )
+
+    return jsonify(json_filtered) #jsonify( json_obj )
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run( debug=True, port=5000 )
 
