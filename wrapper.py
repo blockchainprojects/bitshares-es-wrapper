@@ -21,9 +21,6 @@ app.config['SWAGGER'] = {
 Swagger(app, template_file='wrapper.yaml')
 
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
-
 @app.route('/get_account_history')
 def get_account_history():
 
@@ -150,8 +147,40 @@ def get_trx():
 
     return jsonify(results)
 
+@app.route('/get_account_power_over_time')
+def get_account_power_over_time(): # return time to power to proxied power
+
+    #from_      = request.args.get('from', ) # current_time
+    #to_        = request.args.get('to', ) # 2 years back
+    account = request.args.get('id', "1.2.17")
+
+    s = Search(using=es, index="objects-voting-statistics") #, extra={"size": size, "from": from_})
+
+    q = Q("match", account=account)
+
+    s.query = q
+    response = s.execute()
+    results = []
+    for hit in response:
+        results.append(hit.to_dict())
+    json = jsonify(results)
+
+    
+
+    return json
+
+@app.route('/get_voted_workers_over_time')
+def get_voted_workers_over_time(): # returns worker voted by this account over time
+    # account_id
+    pass
+
+@app.route('/get_worker_power_over_time')
+def get_worker_power_over_time(): # returns the voting power of a worker over time with each account voted for him
+    # vote_id
+    pass
+
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True, port=5000)
 
