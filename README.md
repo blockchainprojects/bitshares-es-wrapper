@@ -6,38 +6,24 @@ Wrapper for final user applications to interact with account data from the bitsh
 
 In order to install this wrapper you need to have a bitshares node running with elasticsearch plugin. Refer to this document on how to do that: https://github.com/bitshares/bitshares-core/wiki/ElasticSearch-Plugin
 
-## Install
+## Obtain
 
-- Install python elasticsearch low level lib:
+    git clone https://github.com/oxarbitrage/bitshares-es-wrapper.git
 
-`pip install elasticsearch`
+## Install Dependencies
 
-- Install python elasticsearch high level lib to easy query:
+    pip install -r requirements.txt
 
-`pip install elasticsearch-dsl`
+## Run
 
-- Install flask CORS to query the wrapper from anywhere:
+    export FLASK_APP=wrapper.py
+    flask run --host=0.0.0.0
 
-`pip install flask-cors`
-
-- Install flasgger for swagger apidocs:
-
-`pip install flasgger`
-
-- Clone and run it by flask:
-
-```
-git clone https://github.com/oxarbitrage/bitshares-es-wrapper.git
-export FLASK_APP=wrapper.py
-flask run --host=0.0.0.0
-```
 
 Or
 
-```
-uwsgi --ini wrapper.ini
-```
+    uwsgi --ini wrapper.ini
  
- ## API Documentation
+## API Documentation
  
- Swagger api docs: http://185.208.208.184:5000/apidocs/#!/wrapper/
+Swagger api docs: http://185.208.208.184:5000/apidocs/#!/wrapper/
