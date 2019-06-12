@@ -8,6 +8,7 @@ from elasticsearch_dsl import Search, query, Q, DocType, utils
 from elasticsearch_dsl.exceptions import IllegalOperation
 
 from flasgger import Swagger
+from sortedcontainers import SortedList
 
 import json
 
@@ -201,69 +202,53 @@ def get_voted_workers_over_time(): # returns worker voted by this account over t
 def get_worker_power_over_time(): # returns the voting power of a worker over time with each account voted for him
     #from_      = request.args.get('from', ) # current_time
     #to_        = request.args.get('to', ) # 2 years back
-    vote_id = request.args.get('vote_id', '1:0') # account_id
+    vote_id = request.args.get('vote_id', '1:0') # vote_id
 
     s = Search( using=es, index="objects-voting-statistics" )
-    #s.query = Q( "match_all" ) #, vote_id=vote_id )
+    s.query = Q( "match_all" ) #, vote_id=vote_id )
 
     response = s.execute()
-    json_obj = []
-    for hit in response:
-        json_obj.append( hit.to_dict() )
-    
-    filtered_obj_clean = \
-    {
-        "block_number" : 0, 
-        "block_time": "",
-        "proxied" : 
-        [
-        ] 
-    }
-    json_filtered = []
+    json_filtered = SortedList(key=lambda k: k["block_number"])
 
-    print("SEARCHED: " + str(vote_id) )
-    for hit in json_obj:
+    for hit in response: # traverse all hits
+        hit = hit.to_dict()
+        if vote_id not in hit["votes"]: # ignore htis which not contain our vote_id
+            continue 
         
-        if vote_id in hit["votes"]: # only calculate when we find the given vote id
-            filtered_already_exists = False
-            for filtered in json_filtered: # before creating objects look for existing ones 
-                if filtered["block_number"] == hit["block_number"]: # when an obj already exists
-                    stake = 0 # start calculating the stake 
-                    if hit["proxy"] == "1.2.5": # 1.2.5 == GRAPHENE_PROXY_TO_SELF only add the own stake when the account has no proxy
-                        stake += hit["stake"]
-                    for proxied_account_to_stake_pair in hit["proxy_for"]:
-                        print(proxied_account_to_stake_pair[1])
-                        stake += int(proxied_account_to_stake_pair[1])
-                    
-                    if stake == 0:
-                        filtered_already_exists = True
-                        break
-                    filtered["proxied"].append({ "proxee" : hit["account"], 
-                        "stake" : stake })
-                    filtered_already_exists = True
+        stake = 0
+        for filtered in json_filtered:
+            if filtered["block_number"] == hit["block_number"]: # when we already have the object extend it
+                if hit["proxy"] == "1.2.5": # 1.2.5 == GRAPHENE_PROXY_TO_SELF means no proxy set, hence add the stake
+                    stake += hit["stake"]
+                for proxied in hit["proxy_for"]: # proxied is account to stake datastructure
+                    stake += int(proxied[1])
+                
+                if stake == 0: # when there is no stake no need to add the proxied stake
                     break
-            if filtered_already_exists:
-                continue
+                
+                filtered["proxied"].append( {"proxee": hit["account"], "stake": stake} )
+                break
 
-            stake = 0
-            if hit["proxy"] == "1.2.5": # 1.2.5 == GRAPHENE_PROXY_TO_SELF only add the own stake when the account has no proxy
-                stake += hit["stake"]
-            for proxied_account_to_stake_pair in hit["proxy_for"]: # accumulate all proxied stakes and add them
-                print(proxied_account_to_stake_pair[1])
-                stake += int(proxied_account_to_stake_pair[1])
-            if stake == 0: # skip when no stake was accumulated
-                continue
-            
-            # create a new filtered_obj and add it the list of filtered objects
-            filtered_obj = filtered_obj = { "block_number" : 0, 
-                "block_time": "", "proxied" : [] }
-            filtered_obj["block_number"] = hit["block_number"]
-            filtered_obj["block_time"] = hit["block_time"]
-            filtered_obj["proxied"].append( { "proxee" : hit["account"],
-                "stake" : stake } )
-            json_filtered.append( filtered_obj )
+        if stake != 0: # can only occur when the vote_id was found in json_filtered hence it was already added so start looking in new hit
+            continue
 
-    return jsonify(json_filtered) #jsonify( json_obj )
+        if hit["proxy"] == "1.2.5":
+            stake += hit["stake"]
+        for proxied in hit["proxy_for"]:
+            stake += int(proxied[1])
+        
+        if stake == 0: 
+            continue
+        
+        # create a new filtered_obj and add it the list of filtered objects
+        filtered_obj =  { 
+            "block_number" : hit["block_number"], 
+            "block_time": hit["block_time"],
+            "proxied" : [ {"proxee": hit["account"], "stake": stake} ] 
+        }
+        json_filtered.add( filtered_obj )
+
+    return jsonify( list(json_filtered) )
 
 
 if __name__ == '__main__':
