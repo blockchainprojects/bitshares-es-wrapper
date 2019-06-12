@@ -161,17 +161,16 @@ def get_account_power_over_time(): # return time to power to proxied power
     s.query = Q( "match", account=account )
 
     response = s.execute()
-    json_obj = []
+    json = SortedList(key=lambda json: json["block_number"])
     for hit in response:
-        json_obj.append( hit.to_dict() )
-    
-    for hit in json_obj:
+        hit = hit.to_dict()
         del hit["account"]
         del hit["object_id"]
         del hit["votes"]
         del hit["id"]
+        json.add(hit)
     
-    return jsonify( json_obj )
+    return jsonify( list(json) )
 
 @app.route('/get_voted_workers_over_time')
 def get_voted_workers_over_time(): # returns worker voted by this account over time
@@ -184,19 +183,18 @@ def get_voted_workers_over_time(): # returns worker voted by this account over t
     s.query = Q( "match", account=account )
 
     response = s.execute()
-    json_obj = []
+    json = SortedList(key=lambda json: json["block_number"]) 
     for hit in response:
-        json_obj.append( hit.to_dict() )
-    
-    for hit in json_obj:
+        hit = hit.to_dict()
         del hit["account"]
         del hit["object_id"]
         del hit["id"]
         del hit["proxy"]
         del hit["stake"]
         del hit["proxy_for"]
+        json.add(hit)
 
-    return jsonify( json_obj )
+    return jsonify( list(json) )
 
 @app.route('/get_worker_power_over_time')
 def get_worker_power_over_time(): # returns the voting power of a worker over time with each account voted for him
@@ -208,7 +206,7 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
     s.query = Q( "match_all" ) #, vote_id=vote_id )
 
     response = s.execute()
-    json_filtered = SortedList(key=lambda k: k["block_number"])
+    json = SortedList(key=lambda k: k["block_number"])
 
     for hit in response: # traverse all hits
         hit = hit.to_dict()
@@ -216,7 +214,7 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
             continue 
         
         stake = 0
-        for filtered in json_filtered:
+        for filtered in json:
             if filtered["block_number"] == hit["block_number"]: # when we already have the object extend it
                 if hit["proxy"] == "1.2.5": # 1.2.5 == GRAPHENE_PROXY_TO_SELF means no proxy set, hence add the stake
                     stake += hit["stake"]
@@ -246,9 +244,9 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
             "block_time": hit["block_time"],
             "proxied" : [ {"proxee": hit["account"], "stake": stake} ] 
         }
-        json_filtered.add( filtered_obj )
+        json.add( filtered_obj )
 
-    return jsonify( list(json_filtered) )
+    return jsonify( list(json) )
 
 
 if __name__ == '__main__':
