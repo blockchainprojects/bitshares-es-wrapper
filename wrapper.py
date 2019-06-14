@@ -164,10 +164,15 @@ def get_account_power_over_time(): # return time to power to proxied power
     json = SortedList(key=lambda json: json["block_number"])
     for hit in response:
         hit = hit.to_dict()
-        del hit["account"]
         del hit["object_id"]
         del hit["votes"]
         del hit["id"]
+        stake = 0 
+        if hit["proxy"] == "1.2.5":
+            stake += int( hit["stake"] )
+        for proxeed in hit["proxy_for"]:
+            stake += int( proxeed[1] )
+        hit["sum_stake"] = stake
         json.add(hit)
     
     return jsonify( list(json) )
@@ -186,9 +191,14 @@ def get_voted_workers_over_time(): # returns worker voted by this account over t
     json = SortedList(key=lambda json: json["block_number"]) 
     for hit in response:
         hit = hit.to_dict()
-        del hit["account"]
         del hit["object_id"]
         del hit["id"]
+        stake = 0 
+        if hit["proxy"] == "1.2.5":
+            stake += int( hit["stake"] )
+        for proxeed in hit["proxy_for"]:
+            stake += int( proxeed[1] )
+        hit["sum_stake"] = stake
         del hit["proxy"]
         del hit["stake"]
         del hit["proxy_for"]
