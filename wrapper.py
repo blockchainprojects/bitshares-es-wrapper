@@ -155,7 +155,7 @@ def get_account_power_over_time(): # return time to power to proxied power
 
     #from_      = request.args.get('from', ) # current_time
     #to_        = request.args.get('to', ) # 2 years back
-    account = request.args.get( "account", "1.2.17" ) # account_id
+    account = request.args.get( "account", "1.2.18" ) # account_id
 
     s = Search( using=es, index="objects-voting-statistics" )
     s.query = Q( "match", account=account )
@@ -182,7 +182,7 @@ def get_voted_workers_over_time(): # returns worker voted by this account over t
     
     #from_      = request.args.get('from', ) # current_time
     #to_        = request.args.get('to', ) # 2 years back
-    account = request.args.get( "account", "1.2.17" ) # account_id
+    account = request.args.get( "account", "1.2.18" ) # account_id
 
     s = Search( using=es, index="objects-voting-statistics" )
     s.query = Q( "match", account=account )
