@@ -12,7 +12,10 @@ from sortedcontainers import SortedList
 
 import json
 
-es = Elasticsearch(timeout=60)
+es = Elasticsearch( ["https://BitShares:Infrastructure@elasticsearch.bitshares.ws:443"], timeout=60 )
+#es = Elasticsearch( timeout=60 )
+
+
 app = Flask(__name__)
 from flask_cors import CORS, cross_origin
 CORS(app)
@@ -157,7 +160,7 @@ def get_account_power_over_time(): # return time to power to proxied power
     #to_        = request.args.get('to', ) # 2 years back
     account = request.args.get( "account", "1.2.18" ) # account_id
 
-    s = Search( using=es, index="objects-voting-statistics" )
+    s = Search( using=es, index="objects-voting-statistics", extra={"size": 500} )
     s.query = Q( "match", account=account )
 
     response = s.execute()
@@ -212,7 +215,7 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
     #to_        = request.args.get('to', ) # 2 years back
     vote_id = request.args.get('vote_id', '1:0') # vote_id
 
-    s = Search( using=es, index="objects-voting-statistics" )
+    s = Search( using=es, index="objects-voting-statistics", extra={"size": 1000} )
     s.query = Q( "match_all" ) #, vote_id=vote_id )
 
     response = s.execute()
