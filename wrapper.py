@@ -153,32 +153,144 @@ def get_trx():
 
     return jsonify(results)
 
-@app.route('/get_account_power_over_time')
-def get_account_power_over_time(): # return time to power to proxied power
+@app.route('/get_account_power_self_total')
+def get_account_power_self_total(): # return time to power to proxied power
 
-    #from_      = request.args.get('from', ) # current_time
-    #to_        = request.args.get('to', ) # 2 years back
-    account = request.args.get( "account", "1.2.18" ) # account_id
+    from_date = request.args.get( "from", "2019-01-06T15:00:00" ) # past date
+    to_date   = request.args.get( "to", "2019-07-13T06:00:00" ) # date after past date
+    account   = request.args.get( "account", "1.2.285" ) # account_id
 
-    s = Search( using=es, index="objects-voting-statistics", extra={"size": 500} )
-    s.query = Q( "match", account=account )
-
-    response = s.execute()
-    json = SortedList(key=lambda json: json["block_number"])
-    for hit in response:
-        hit = hit.to_dict()
-        del hit["object_id"]
-        del hit["votes"]
-        del hit["id"]
-        stake = 0 
-        if hit["proxy"] == "1.2.5":
-            stake += int( hit["stake"] )
-        for proxeed in hit["proxy_for"]:
-            stake += int( proxeed[1] )
-        hit["sum_stake"] = stake
-        json.add(hit)
+    req = Search( using=es, index="objects-voting-statistics", extra={"size": 730} ) # return size 1k
+    req = req.sort("-block_number") # sort by blocknumber => last_block is first hit
+    req = req.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number"] ) # retrive only this attributes
     
-    return jsonify( list(json) )
+    qaccount = Q( "match", account=account ) # match account
+    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} ) # match date range
+    req.query = qaccount & qrange # combine queries
+
+    response = req.execute()
+
+    # generate json in form of 
+    # {
+    #    blocks: [ 1, 2, 3, 4, 5 ]
+    #    self_power: [ 0, 2, 0, 4, 5 ]
+    #    total_power: [100, 200, 300, 400, 500 ]
+    # }
+
+    blocks = []
+    self_powers = []
+    total_powers = []
+
+    for hit in reversed(response):
+        hit = hit.to_dict()
+
+        blocks.append( hit["block_number"] )
+
+        self_power  = 0
+        if hit["proxy"] == "1.2.5":
+            self_power = int( hit["stake"] )
+        self_powers.append( self_power )
+
+        total_power = 0     
+        for proxee in hit["proxy_for"]:
+            total_power += int( proxee[1] )
+        total_powers.append( total_power )
+
+    ret = {
+        "account": account,
+        "blocks": blocks,
+        "self_powers": self_powers,
+        "total_powers": total_powers
+    }
+    return jsonify( ret )
+
+
+@app.route('/get_account_power_self_proxies')
+def get_account_power_self_proxies(): # return all proxies with given 
+
+    from_date = request.args.get( "from", "2019-01-06T15:00:00" ) # past date
+    to_date   = request.args.get( "to", "2019-07-13T06:00:00" ) # date after past date
+    account   = request.args.get( "account", "1.2.285" ) # account_id
+
+    req = Search( using=es, index="objects-voting-statistics", extra={"size": 1000} ) # return size 1k
+    req = req.sort("-block_number") # sort by blocknumber => last_block is first hit
+    req = req.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number"] ) # retrive only this attributes
+    
+    qaccount = Q( "match", account=account ) # match account
+    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} ) # match date range
+    req.query = qaccount & qrange # combine queries
+
+    response = req.execute()
+
+    # generate json in form of 
+    # {
+    #    blocks: [ 1, 2, 3, 4, 5 ]
+    #    self_power: [ 0, 2, 0, 4, 5 ]
+    #    proxies: {
+    #        "1.2.15": [],
+    #        "1.2.30": []
+    #    }
+    # }
+
+    blocks = []
+    self_powers = []
+    proxy_powers = {}
+    
+    block_counter = 0
+    num_blocks = len(response)
+    for hit in reversed(response):
+        hit = hit.to_dict()
+
+        blocks.append( hit["block_number"] )
+
+        self_power  = 0
+        if hit["proxy"] == "1.2.5":
+            self_power = int( hit["stake"] )
+        self_powers.append( self_power )
+
+        for proxee in hit["proxy_for"]:
+            proxy_name = proxee[0]
+            proxy_power = int( proxee[1] )
+            if proxy_name in proxy_powers:
+                # proxy_name = key => ret arr of powers => [block_counter] == power at that block
+                proxy_powers[proxy_name][block_counter] = proxy_power
+            else:
+                proxy_powers[proxy_name] = [0] * num_blocks
+                proxy_powers[proxy_name][block_counter] = proxy_power
+        
+        block_counter += 1
+
+    
+    last_block = num_blocks - 1
+    
+    total_power_last_block = self_powers[last_block]
+    for proxy_name, proxy_power in proxy_powers.items():
+        total_power_last_block += proxy_power[last_block]
+
+    merge_percentage = 0.05
+    merge_below = merge_percentage * total_power_last_block
+
+    merged_proxies = [0] * num_blocks
+    proxies_to_delete = []
+    for proxy_name, proxy_power in proxy_powers.items():
+        if proxy_power[last_block] < merge_below:
+            for i in range(num_blocks):
+                merged_proxies[i] += proxy_power[i]
+            proxies_to_delete.append( proxy_name )
+
+    proxy_powers["< 5%"] = merged_proxies
+
+    for proxy_name in proxies_to_delete:
+        del proxy_powers[proxy_name]
+
+
+    ret = {
+        "account": account,
+        "blocks": blocks,
+        "self_powers": self_powers,
+        "proxy_powers": proxy_powers
+    }
+    return jsonify( ret )
 
 @app.route('/get_voted_workers_over_time')
 def get_voted_workers_over_time(): # returns worker voted by this account over time
