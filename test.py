@@ -21,12 +21,12 @@ def get_account_power_over_time():
 
    from_date = "2019-04-06T15:00:00" # past date
    to_date   = "2019-07-13T06:00:00" # date after past date
-   account   = "1.2.285" # account_id
+   account   = "1.2.282" # account_id
 
    request = Search( using=es, index="objects-voting-statistics", extra={"size": 10000} ) # return size 1k
    request = request.sort("-block_number") # sort by blocknumber => last_block is first hit
    request = request.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number"] ) # retrive only this attributes
-   
+
    qaccount = Q( "match", account=account ) # match account
    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} ) # match date range
    request.query = qaccount & qrange # combine queries
@@ -34,19 +34,19 @@ def get_account_power_over_time():
    response = request.execute()
    print( type(response) )
    print( len(response) )
-   
+
    while(True): pass
    result = []
    for hit in reversed(response):
       hit = hit.to_dict()
-      total_stake = 0 
+      total_stake = 0
       if hit["proxy"] == "1.2.5":
          total_stake += int( hit["stake"] )
       for proxeed in hit["proxy_for"]:
          total_stake += int( proxeed[1] )
       hit["total_stake"] = total_stake
       result.append( hit )
-   
+
    print( json.dumps(result) )
    return json.dumps(result)
 
@@ -59,14 +59,14 @@ def get_account_power_over_time_proxies():
     req = Search( using=es, index="objects-voting-statistics", extra={"size": 100} ) # return size 1k
     req = req.sort("-block_number") # sort by blocknumber => last_block is first hit
     req = req.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number"] ) # retrive only this attributes
-    
+
     qaccount = Q( "match", account=account ) # match account
     qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} ) # match date range
     req.query = qaccount & qrange # combine queries
 
     response = req.execute()
 
-    # generate json in form of 
+    # generate json in form of
     # {
     #    blocks: [ 1, 2, 3, 4, 5 ]
     #    self_power: [ 0, 2, 0, 4, 5 ]
@@ -79,7 +79,7 @@ def get_account_power_over_time_proxies():
     blocks = []
     self_powers = []
     proxy_powers = {}
-    
+
     block_counter = 0
     num_blocks = len(response)
     for hit in reversed(response):
@@ -102,7 +102,7 @@ def get_account_power_over_time_proxies():
             else:
                 proxy_powers[proxy_name] = [0] * num_blocks
                 proxy_powers[proxy_name][block_counter] = proxy_power
-        
+
         block_counter += 1
 
     ret = {
@@ -117,13 +117,13 @@ def get_account_power_over_time_proxies_time_split():
 
     from_date = "2018-01-06T15:00:00"
     to_date   = "2019-07-13T06:00:00"
-    account   = "1.2.285" 
+    account   = "1.2.285"
 
     conv_from = datetime.strptime( from_date, "%Y-%m-%dT%H:%M:%S" )
     conv_to = datetime.strptime( to_date, "%Y-%m-%dT%H:%M:%S" )
     print( conv_from )
     print( conv_to )
-    
+
     from_to_delta_days = (conv_to - conv_from).days
     num_queries =  5
     time_window_days = from_to_delta_days / num_queries
@@ -141,24 +141,24 @@ def get_account_power_over_time_proxies_time_split():
     req = Search( using=es, index="objects-voting-statistics", extra={ "size": 300 } ) # size: max return size
     req = req.sort("-block_number") # sort by blocknumber => newest block is first hit
     req = req.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number"] ) # retrive only this attributes
-    
-    qaccount = Q( "match", account=account ) 
-    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} ) 
-    req.query = qaccount & qrange 
+
+    qaccount = Q( "match", account=account )
+    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} )
+    req.query = qaccount & qrange
 
     response = req.execute()
 
-    # generate json in form of 
+    # generate json in form of
     # {
     #    blocks: [ 1, 2, 3, 4, 5 ]
     #    self_power: [ 0, 2, 0, 4, 5 ]
     #    proxies: // proxies should be sorted by last item in arr
-    #    [ 
+    #    [
     #        [
     #           "1.2.15", [ 1, 2, 3, 4, 5 ]
     #        ],
     #        [
-    #           "1.2.30", [ 6, 7, 8, 9, 10 ] 
+    #           "1.2.30", [ 6, 7, 8, 9, 10 ]
     #        ]
     #    ]
     # }
@@ -166,7 +166,7 @@ def get_account_power_over_time_proxies_time_split():
     blocks = []
     self_powers = []
     proxy_powers = {}
-    
+
     block_counter = 0
     num_blocks = len(response)
     for hit in reversed(response):
@@ -188,12 +188,12 @@ def get_account_power_over_time_proxies_time_split():
             else:
                 proxy_powers[proxy_name] = [0] * num_blocks
                 proxy_powers[proxy_name][block_counter] = proxy_power
-        
+
         block_counter += 1
 
-    
+
     last_block = num_blocks - 1
-    
+
     total_power_last_block = self_powers[last_block]
     for proxy_name, proxy_power in proxy_powers.items():
         total_power_last_block += proxy_power[last_block]
@@ -222,7 +222,7 @@ def get_account_power_over_time_proxies_time_split():
     proxy_powers_list = []
     for k, v in proxy_powers.items():
         proxy_powers_list.append( [k, v] )
-    
+
     proxy_powers_list.sort( key = sort_by_last_item_asc )
 
     ret = {
@@ -242,9 +242,9 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
 
 
     s = Search( using=es, index="objects-voting-statistics", extra={ "size": 5000 } )
-    #qvoteid = Q( "match" , vote_id=vote_id ) 
+    #qvoteid = Q( "match" , vote_id=vote_id )
     s.query = Q( "match_all" )
-    
+
 
     response = s.execute()
 
@@ -255,8 +255,8 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
     for hit in response: # traverse all hits
         hit = hit.to_dict()
         if vote_id not in hit["votes"]: # ignore htis which not contain our vote_id
-            continue 
-        
+            continue
+
         stake = 0
         for filtered in json_str:
             if filtered["block_number"] == hit["block_number"]: # when we already have the object extend it
@@ -264,10 +264,10 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
                     stake += hit["stake"]
                 for proxied in hit["proxy_for"]: # proxied is account to stake datastructure
                     stake += int(proxied[1])
-                
+
                 if stake == 0: # when there is no stake no need to add the proxied stake
                     break
-                
+
                 filtered["proxied"].append( {"proxee": hit["account"], "stake": stake} )
                 break
 
@@ -278,15 +278,15 @@ def get_worker_power_over_time(): # returns the voting power of a worker over ti
             stake += hit["stake"]
         for proxied in hit["proxy_for"]:
             stake += int(proxied[1])
-        
-        if stake == 0: 
+
+        if stake == 0:
             continue
-        
+
         # create a new filtered_obj and add it the list of filtered objects
-        filtered_obj =  { 
-            "block_number" : hit["block_number"], 
+        filtered_obj =  {
+            "block_number" : hit["block_number"],
             "block_time": hit["block_time"],
-            "proxied" : [ {"proxee": hit["account"], "stake": stake} ] 
+            "proxied" : [ {"proxee": hit["account"], "stake": stake} ]
         }
         json_str.add( filtered_obj )
 
@@ -302,25 +302,25 @@ def test_queries():
 
     from_date = "2018-01-06T15:00:00"
     to_date   = "2019-07-13T06:00:00"
-    account   = "1.2.282" 
+    account   = "1.2.282"
 
     req = Search( using=es, index="objects-voting-statistics", extra={ "size": 700 } ) # size: max return size
     req = req.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number", "votes"] ) # retrive only this attributes
     req = req.sort("-block_number") # sort by blocknumber => newest block is first hit
 
-    qaccount = Q( "match", account=account ) 
-    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} ) 
+    qaccount = Q( "match", account=account )
+    qrange = Q( "range", block_time={ "gte": from_date, "lte": to_date} )
     qblock = Q( "match", block_number=39407390 )
     req.query = qaccount & qblock
 
     response = req.execute()
     print( response )
-    
-    
+
+
     for hit in response:
         hit = hit.to_dict()
         print( "VOTES:", hit["votes"])
-        
+
         total_power = int( hit["stake"] ) / 100000
         print( "PROXY: ", hit["proxy"] )
         for proxy_name_stake in hit["proxy_for"]:
@@ -328,11 +328,11 @@ def test_queries():
 
     print( "TOTAL: ", total_power )
     return
-    
+
     blocks = []
     self_powers = []
     proxy_powers = {}
-    
+
     block_counter = 0
     num_blocks = len(response)
     for hit in reversed(response):
@@ -354,12 +354,12 @@ def test_queries():
             else:
                 proxy_powers[proxy_name] = [0] * num_blocks
                 proxy_powers[proxy_name][block_counter] = proxy_power
-        
+
         block_counter += 1
 
-    
+
     last_block = num_blocks - 1
-    
+
     total_power_last_block = self_powers[last_block]
     for proxy_name, proxy_power in proxy_powers.items():
         total_power_last_block += proxy_power[last_block]
@@ -388,7 +388,7 @@ def test_queries():
     proxy_powers_list = []
     for k, v in proxy_powers.items():
         proxy_powers_list.append( [k, v] )
-    
+
     proxy_powers_list.sort( key = sort_by_last_item_asc )
 
     ret = {
@@ -402,8 +402,28 @@ def test_queries():
     print( ret )
     return ret
 
+def test_voteable_stat():
+
+
+
+    s = Search( using=es, index="objects-voteable-statistics", extra={ "size": 100 } )
+    qvoteid = Q( "match" , vote_id="1:41" )
+    s.query = qvoteid
+
+
+    response = s.execute()
+    as_json = []
+    for hit in response:
+        as_json.append( hit.to_dict()["block_time"] )
+
+    as_json.sort()
+    print( json.dumps(as_json) )
+
+
 if __name__ == '__main__':
     #get_account_power_over_time()
     #get_account_power_over_time_proxies_time_split()
     #test_queries()
-    get_worker_power_over_time()
+    #get_worker_power_over_time()
+
+    test_voteable_stat()
