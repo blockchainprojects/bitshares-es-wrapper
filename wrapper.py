@@ -9,11 +9,11 @@ from elasticsearch_dsl.exceptions import IllegalOperation
 
 from flasgger import Swagger
 from sortedcontainers import SortedList
-
+from pprint import pprint
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-es = Elasticsearch( ["https://BitShares:Infrastructure@elasticsearch.bitshares.ws:443"], timeout=60 )
+es = Elasticsearch( ["https://BitShares:Infrastructure@eu.elasticsearch.bitshares.ws:443"], timeout=60 )
 #es = Elasticsearch( timeout=60 )
 
 
@@ -228,6 +228,7 @@ def get_account_power_self_total(): # return time to power to proxied power
     time_window_days = from_to_delta_days / datapoints
 
     blocks = []
+    block_time = []
     self_powers = []
     total_powers = []
 
@@ -266,20 +267,22 @@ def get_account_power_self_total(): # return time to power to proxied power
             hit = hit.to_dict()
 
             blocks.append( hit["block_number"] )
+            block_time.append( hit["block_time"] )
 
             self_power  = 0
             if hit["proxy"] == "1.2.5":
-                self_power = int( hit["stake"] ) / 100000
-            self_powers.append( self_power )
+                self_power = int( hit["stake"] )
+            self_powers.append( int( self_power / 100000 ) )
 
             total_power = 0
             for proxee in hit["proxy_for"]:
-                total_power += int( proxee[1] ) / 100000
-            total_powers.append( total_power )
+                total_power += int( proxee[1] )
+            total_powers.append( int( total_power / 100000 ) )
 
     ret = {
         "account": account,
         "blocks": blocks,
+        "block_time": block_time,
         "self_powers": self_powers,
         "total_powers": total_powers
     }
@@ -314,6 +317,7 @@ def get_account_power_self_proxies(): # return all proxies with given
     time_window_days = from_to_delta_days / datapoints
 
     blocks = []
+    block_time = []
     self_powers = []
     proxy_powers = {}
     block_counter = 0
@@ -358,6 +362,7 @@ def get_account_power_self_proxies(): # return all proxies with given
             hit = hit.to_dict()
 
             blocks.append( hit["block_number"] )
+            block_time.append( hit["block_time"] )
 
             self_power = 0
             if hit["proxy"] == "1.2.5":
@@ -392,6 +397,7 @@ def get_account_power_self_proxies(): # return all proxies with given
         return {
             "account":      account,
             "blocks":       [],
+            "block_time":   [],
             "self_powers":  [],
             "proxy_powers": []
         }
@@ -429,6 +435,7 @@ def get_account_power_self_proxies(): # return all proxies with given
     ret = {
         "account":      account,
         "blocks":       blocks,
+        "block_time":   block_time,
         "self_powers":  self_powers,
         "proxy_powers": proxy_powers_list
     }
@@ -438,14 +445,14 @@ def get_account_power_self_proxies(): # return all proxies with given
 
     return ret
 
-@app.route('/get_voteable_power')
-def get_voteable_power(): # returns the voting power of a worker over time with each account voted for him
+@app.route('/get_voteable_powers')
+def get_voteable_powers(): # returns the voting power of a worker over time with each account voted for him
     print( "REQUEST RECEIVED" )
     global voteable_power_proxeed_cache
 
     from_date = request.args.get( "from", "2019-01-01T00:00:00" ) # past date
     to_date   = request.args.get( "to", "2019-07-15T00:00:00" )   # date after past date
-    vote_id   = request.args.get( "vote_id", "0:1" )
+    vote_id   = request.args.get( "vote_id", "2:614" )
     datapoints = int( request.args.get( "datapoints", 100 ) )
     if datapoints > 700:
         datapoints = 700
@@ -454,17 +461,16 @@ def get_voteable_power(): # returns the voting power of a worker over time with 
     datetime_from   = datetime.strptime( from_date, datetime_format )
     datetime_to     = datetime.strptime( to_date, datetime_format )
 
-    cached_data = voteable_power_proxeed_cache.get( vote_id, datapoints, from_date, to_date )
-    if cached_data != None:
-        return cached_data
+    #cached_data = voteable_power_proxeed_cache.get( vote_id, datapoints, from_date, to_date )
+    #if cached_data != None:
+    #    return cached_data
 
     from_to_delta_days = ( datetime_to - datetime_from ).days
 
     time_window_days = from_to_delta_days / datapoints
 
     blocks = []
-    voteable_powers = []
-    block_counter = 0
+    total_powers = []
 
     # dec once to have inc at begin
     datetime_from -= timedelta( days=time_window_days )
@@ -479,18 +485,19 @@ def get_voteable_power(): # returns the voting power of a worker over time with 
         print( "Searching from: ", from_date_to_search, " to: ", to_date_to_search )
 
         req = Search( using=es, index="objects-voteable-statistics", extra={ "size": 1 } ) # size: max return size
-        req = req.source( ["vote_id", "block_time", "block_number"] ) # retrive only this attributes
+        req = req.source( ["vote_id", "block_time", "block_number", "voted_by"] ) # retrive only this attributes
         req = req.sort("-block_number") # sort by blocknumber => newest block is first hit
 
-        qaccount = Q( "match", account=account )
+        qvote_id = Q( "match_phrase", vote_id=vote_id )
         qrange = Q( "range", block_time={ "gte": from_date_to_search, "lte": to_date_to_search} )
-        req.query = qaccount & qrange
+        req.query = qvote_id & qrange
+        pprint( req.to_dict() )
         response = req.execute()
 
         # generate json in form of
         # {
         #    blocks: [ 1, 2, 3, 4, 5 ]
-        #    self_power: [ 0, 2, 0, 4, 5 ]
+        #    voteable: [ 0, 2, 0, 4, 5 ]
         #    proxies: // proxies should be sorted by last item in arr
         #    [
         #        [
@@ -504,74 +511,64 @@ def get_voteable_power(): # returns the voting power of a worker over time with 
 
         for hit in response:
             hit = hit.to_dict()
-
+            pprint( hit )
             blocks.append( hit["block_number"] )
+            total = 0
+            for account_to_proxeed in hit["voted_by"]:
+                total += int(account_to_proxeed[1])
+            total_powers.append( int(total / 100000) )
+            #block_counter += 1
 
-            self_power = 0
-            if hit["proxy"] == "1.2.5":
-                self_power = int( int( hit["stake"] ) / 100000 )
-            self_powers.append( self_power )
+    #size_successful_queries = len(blocks)
+    #size_not_found_elements = datapoints - size_successful_queries
+    #index_to_delete_begin = datapoints - size_not_found_elements
+    #index_to_delete_end = datapoints
 
-            for proxee in hit["proxy_for"]:
-                proxy_name = proxee[0]
-                proxy_power = int( int( proxee[1] ) / 100000 )
-                if proxy_name in proxy_powers:
-                    # proxy_name = key => ret arr of powers => [block_counter] == power at that block
-                    proxy_powers[proxy_name][block_counter] = proxy_power
-                else:
-                    proxy_powers[proxy_name] = [0] * datapoints
-                    proxy_powers[proxy_name][block_counter] = proxy_power
-
-            block_counter += 1
-
-    size_successful_queries = len(self_powers)
-    size_not_found_elements = datapoints - size_successful_queries
-    index_to_delete_begin = datapoints - size_not_found_elements
-    index_to_delete_end = datapoints
-
-    del self_powers[index_to_delete_begin:index_to_delete_end]
-    for proxy_name, proxy_power in proxy_powers.items():
-        del proxy_power[index_to_delete_begin:index_to_delete_end]
+    #del self_powers[index_to_delete_begin:index_to_delete_end]
+    #for proxy_name, proxy_power in proxy_powers.items():
+    #    del proxy_power[index_to_delete_begin:index_to_delete_end]
 
 
-    last_block = size_successful_queries - 1
-    total_power_last_block = self_powers[last_block]
-    for proxy_power in proxy_powers.values():
-        total_power_last_block += proxy_power[last_block]
+    #last_block = size_successful_queries - 1
+    #total_power_last_block = self_powers[last_block]
+    #for proxy_power in proxy_powers.values():
+    #    total_power_last_block += proxy_power[last_block]
 
-    merge_below_perc = 0.05
-    merge_below = merge_below_perc * total_power_last_block
+    #merge_below_perc = 0.05
+    #merge_below = merge_below_perc * total_power_last_block
 
-    merged_proxies = [0] * size_successful_queries
-    proxies_to_delete = []
-    for proxy_name, proxy_power in proxy_powers.items():
-        if proxy_power[last_block] < merge_below:
-            for i in range( size_successful_queries ):
-                merged_proxies[i] += proxy_power[i]
-            proxies_to_delete.append( proxy_name )
+    #merged_proxies = [0] * size_successful_queries
+    #proxies_to_delete = []
+    #for proxy_name, proxy_power in proxy_powers.items():
+    #    if proxy_power[last_block] < merge_below:
+    #        for i in range( size_successful_queries ):
+    #            merged_proxies[i] += proxy_power[i]
+    #        proxies_to_delete.append( proxy_name )
 
-    proxy_powers["< 5%"] = merged_proxies
 
-    for proxy_name in proxies_to_delete:
-        del proxy_powers[proxy_name]
+    #proxy_powers["< 5%"] = merged_proxies
+
+
+    #for proxy_name in proxies_to_delete:
+    #    del proxy_powers[proxy_name]
 
     # sort all proxies by last item size
-    def sort_by_last_item_asc( proxied_powers ):
-        return proxied_powers[1][-1]
+    #def sort_by_last_item_asc( proxied_powers ):
+    #    return proxied_powers[1][-1]
 
     # convert to list to be sortable
-    proxy_powers_list = [ [k,v] for k, v in proxy_powers.items() ]
-    proxy_powers_list.sort( key = sort_by_last_item_asc )
+    #proxy_powers_list = [ [k,v] for k, v in proxy_powers.items() ]
+    #proxy_powers_list.sort( key = sort_by_last_item_asc )
 
     ret = {
-        "account":      account,
+        "vote_id":      vote_id,
         "blocks":       blocks,
-        "self_powers":  self_powers,
-        "proxy_powers": proxy_powers_list
+        "total_powers":  total_powers,
+        #"proxy_powers": proxy_powers_list
     }
 
     ret = jsonify( ret )
-    account_data_self_proxy_cache.add( account, datapoints, from_date, to_date, ret )
+    account_data_self_proxy_cache.add( vote_id, datapoints, from_date, to_date, ret )
 
     return ret
 
