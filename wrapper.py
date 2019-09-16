@@ -76,7 +76,7 @@ class ResponseCache:
 
 account_data_self_total_cache = ResponseCache(100)
 account_data_self_proxy_cache = ResponseCache(100)
-voteable_power_proxeed_cache  = ResponseCache(100)
+voteable_votes_cache  = ResponseCache(100)
 
 @app.route('/get_account_history')
 def get_account_history():
@@ -204,6 +204,25 @@ def get_trx():
 
     return jsonify(results)
 
+
+def make_equal_intervals( from_date, to_date, datapoints ):
+
+    datetime_format = "%Y-%m-%dT%H:%M:%S"
+    datetime_from   = datetime.strptime( from_date, datetime_format )
+    datetime_to     = datetime.strptime( to_date, datetime_format )
+    time_window_days = ( datetime_to - datetime_from ).days / datapoints
+    delta_between_points = timedelta( days=time_window_days )
+
+    datetime_intervals = []
+    # extend the points by one to include a point around 'from_date' (if present)
+    datetime_val = datetime_from - 2 * delta_between_points
+    for i in range( datapoints + 1 ):
+        datetime_val += delta_between_points
+        datetime_val_str = datetime_val.strftime( datetime_format )
+        datetime_intervals.append( datetime_val_str )
+
+    return datetime_intervals
+
 @app.route('/get_account_power_self_total')
 def get_account_power_self_total(): # return time to power to proxied power
     print( "REQUEST RECEIVED" )
@@ -220,27 +239,16 @@ def get_account_power_self_total(): # return time to power to proxied power
     if cached_data != None:
         return cached_data
 
-    datetime_format = "%Y-%m-%dT%H:%M:%S"
-    datetime_from   = datetime.strptime( from_date, datetime_format )
-    datetime_to     = datetime.strptime( to_date, datetime_format )
-
-    from_to_delta_days = ( datetime_to - datetime_from ).days
-    time_window_days = from_to_delta_days / datapoints
-
     blocks = []
     block_time = []
     self_powers = []
     total_powers = []
 
-    # dec once to have inc at begin
-    datetime_from -= timedelta( days=time_window_days )
-    for i in range( datapoints ):
+    time_intervals = make_equal_intervals( from_date, to_date, datapoints )
+    for i in range( 1, len(time_intervals) ):
 
-        datetime_from += timedelta( days=time_window_days )
-        datetime_to = datetime_from + timedelta( days=time_window_days )
-
-        from_date_to_search = datetime_from.strftime( datetime_format )
-        to_date_to_search = datetime_to.strftime( datetime_format )
+        from_date_to_search = time_intervals[i-1]
+        to_date_to_search = time_intervals[i]
 
         print( "Searching from: ", from_date_to_search, " to: ", to_date_to_search )
 
@@ -254,14 +262,6 @@ def get_account_power_self_total(): # return time to power to proxied power
         req.query = qaccount & qrange # combine queries
 
         response = req.execute()
-
-        # generate json in form of
-        # {
-        #    blocks: [ 1, 2, 3, 4, 5 ]
-        #    self_power: [ 0, 2, 0, 4, 5 ]
-        #    total_power: [100, 200, 300, 400, 500 ]
-        # }
-
 
         for hit in response:
             hit = hit.to_dict()
@@ -304,17 +304,9 @@ def get_account_power_self_proxies(): # return all proxies with given
     if datapoints > 700:
         datapoints = 700
 
-    datetime_format = "%Y-%m-%dT%H:%M:%S"
-    datetime_from   = datetime.strptime( from_date, datetime_format )
-    datetime_to     = datetime.strptime( to_date, datetime_format )
-
     cached_data = account_data_self_proxy_cache.get( account, datapoints, from_date, to_date )
     if cached_data != None:
         return cached_data
-
-    from_to_delta_days = ( datetime_to - datetime_from ).days
-
-    time_window_days = from_to_delta_days / datapoints
 
     blocks = []
     block_time = []
@@ -322,15 +314,12 @@ def get_account_power_self_proxies(): # return all proxies with given
     proxy_powers = {}
     block_counter = 0
 
-    # dec once to have inc at begin
-    datetime_from -= timedelta( days=time_window_days )
-    for i in range( datapoints ):
 
-        datetime_from += timedelta( days=time_window_days )
-        datetime_to = datetime_from + timedelta( days=time_window_days )
+    time_intervals = make_equal_intervals( from_date, to_date, datapoints )
+    for i in range( 1, len(time_intervals) ):
 
-        from_date_to_search = datetime_from.strftime( datetime_format )
-        to_date_to_search = datetime_to.strftime( datetime_format )
+        from_date_to_search = time_intervals[i-1]
+        to_date_to_search = time_intervals[i]
 
         print( "Searching from: ", from_date_to_search, " to: ", to_date_to_search )
 
@@ -385,8 +374,8 @@ def get_account_power_self_proxies(): # return all proxies with given
 
     size_successful_queries = len(self_powers)
     size_not_found_elements = datapoints - size_successful_queries
-    index_to_delete_begin = datapoints - size_not_found_elements
-    index_to_delete_end = datapoints
+    index_to_delete_begin   = datapoints - size_not_found_elements
+    index_to_delete_end     = datapoints
 
     del self_powers[index_to_delete_begin:index_to_delete_end]
     for proxy_name, proxy_power in proxy_powers.items():
@@ -445,10 +434,10 @@ def get_account_power_self_proxies(): # return all proxies with given
 
     return ret
 
-@app.route('/get_voteable_powers')
+@app.route('/get_voteable_votes_total')
 def get_voteable_powers(): # returns the voting power of a worker over time with each account voted for him
     print( "REQUEST RECEIVED" )
-    global voteable_power_proxeed_cache
+    global voteable_votes_cache
 
     from_date = request.args.get( "from", "2019-01-01T00:00:00" ) # past date
     to_date   = request.args.get( "to", "2019-07-15T00:00:00" )   # date after past date
@@ -457,30 +446,20 @@ def get_voteable_powers(): # returns the voting power of a worker over time with
     if datapoints > 700:
         datapoints = 700
 
-    datetime_format = "%Y-%m-%dT%H:%M:%S"
-    datetime_from   = datetime.strptime( from_date, datetime_format )
-    datetime_to     = datetime.strptime( to_date, datetime_format )
+    cached_data = voteable_votes_cache.get( vote_id, datapoints, from_date, to_date )
+    if cached_data != None:
+        return cached_data
 
-    #cached_data = voteable_power_proxeed_cache.get( vote_id, datapoints, from_date, to_date )
-    #if cached_data != None:
-    #    return cached_data
+    blocks      = []
+    block_time  = []
+    total_votes = []
 
-    from_to_delta_days = ( datetime_to - datetime_from ).days
 
-    time_window_days = from_to_delta_days / datapoints
+    time_intervals = make_equal_intervals( from_date, to_date, datapoints )
+    for i in range( 1, len(time_intervals) ):
 
-    blocks = []
-    total_powers = []
-
-    # dec once to have inc at begin
-    datetime_from -= timedelta( days=time_window_days )
-    for i in range( datapoints ):
-
-        datetime_from += timedelta( days=time_window_days )
-        datetime_to = datetime_from + timedelta( days=time_window_days )
-
-        from_date_to_search = datetime_from.strftime( datetime_format )
-        to_date_to_search   = datetime_to.strftime( datetime_format )
+        from_date_to_search = time_intervals[i-1]
+        to_date_to_search = time_intervals[i]
 
         print( "Searching from: ", from_date_to_search, " to: ", to_date_to_search )
 
@@ -491,7 +470,7 @@ def get_voteable_powers(): # returns the voting power of a worker over time with
         qvote_id = Q( "match_phrase", vote_id=vote_id )
         qrange = Q( "range", block_time={ "gte": from_date_to_search, "lte": to_date_to_search} )
         req.query = qvote_id & qrange
-        pprint( req.to_dict() )
+        #pprint( req.to_dict() )
         response = req.execute()
 
         # generate json in form of
@@ -511,12 +490,14 @@ def get_voteable_powers(): # returns the voting power of a worker over time with
 
         for hit in response:
             hit = hit.to_dict()
-            pprint( hit )
+            #pprint( hit )
             blocks.append( hit["block_number"] )
+            block_time.append( hit["block_time"] )
+
             total = 0
             for account_to_proxeed in hit["voted_by"]:
                 total += int(account_to_proxeed[1])
-            total_powers.append( int(total / 100000) )
+            total_votes.append( int(total / 100000) )
             #block_counter += 1
 
     #size_successful_queries = len(blocks)
@@ -563,7 +544,8 @@ def get_voteable_powers(): # returns the voting power of a worker over time with
     ret = {
         "vote_id":      vote_id,
         "blocks":       blocks,
-        "total_powers":  total_powers,
+        "block_time":   block_time,
+        "total_votes":  total_votes,
         #"proxy_powers": proxy_powers_list
     }
 
