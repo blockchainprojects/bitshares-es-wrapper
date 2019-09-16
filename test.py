@@ -404,20 +404,20 @@ def test_queries():
 
 def test_voteable_stat():
 
-
-
-    s = Search( using=es, index="objects-voteable-statistics", extra={ "size": 100 } )
-    qvoteid = Q( "match" , vote_id="1:41" )
+    s = Search( using=es, index="objects-voteable-statistics", extra={ "size": 10 } )
+    qvoteid = Q( "match" , vote_id="1.14.206" )
     s.query = qvoteid
 
 
     response = s.execute()
     as_json = []
     for hit in response:
-        as_json.append( hit.to_dict()["block_time"] )
+        #as_json.append( hit.to_dict()["block_time"] )
+        as_json.append( hit.to_dict() )
 
-    as_json.sort()
-    print( json.dumps(as_json) )
+    #as_json.sort()
+    #print( json.dumps(as_json) )
+    print(as_json)
 
 
 if __name__ == '__main__':
