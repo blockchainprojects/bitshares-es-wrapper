@@ -438,9 +438,8 @@ def get_account_power_self_proxies(): # return all proxies with given
 
     return ret
 
-# this should be a seperate object
-@app.route('/get_voteable_power_proxeed')
-def get_voteable_power_proxeed(): # returns the voting power of a worker over time with each account voted for him
+@app.route('/get_voteable_power')
+def get_voteable_power(): # returns the voting power of a worker over time with each account voted for him
     print( "REQUEST RECEIVED" )
     global voteable_power_proxeed_cache
 
@@ -455,7 +454,7 @@ def get_voteable_power_proxeed(): # returns the voting power of a worker over ti
     datetime_from   = datetime.strptime( from_date, datetime_format )
     datetime_to     = datetime.strptime( to_date, datetime_format )
 
-    cached_data = account_data_self_proxy_cache.get( account, datapoints, from_date, to_date )
+    cached_data = voteable_power_proxeed_cache.get( vote_id, datapoints, from_date, to_date )
     if cached_data != None:
         return cached_data
 
@@ -464,8 +463,7 @@ def get_voteable_power_proxeed(): # returns the voting power of a worker over ti
     time_window_days = from_to_delta_days / datapoints
 
     blocks = []
-    self_powers = []
-    proxy_powers = {}
+    voteable_powers = []
     block_counter = 0
 
     # dec once to have inc at begin
@@ -476,12 +474,12 @@ def get_voteable_power_proxeed(): # returns the voting power of a worker over ti
         datetime_to = datetime_from + timedelta( days=time_window_days )
 
         from_date_to_search = datetime_from.strftime( datetime_format )
-        to_date_to_search = datetime_to.strftime( datetime_format )
+        to_date_to_search   = datetime_to.strftime( datetime_format )
 
         print( "Searching from: ", from_date_to_search, " to: ", to_date_to_search )
 
-        req = Search( using=es, index="objects-voting-statistics", extra={ "size": 1 } ) # size: max return size
-        req = req.source( ["account", "stake", "proxy", "proxy_for", "block_time", "block_number"] ) # retrive only this attributes
+        req = Search( using=es, index="objects-voteable-statistics", extra={ "size": 1 } ) # size: max return size
+        req = req.source( ["vote_id", "block_time", "block_number"] ) # retrive only this attributes
         req = req.sort("-block_number") # sort by blocknumber => newest block is first hit
 
         qaccount = Q( "match", account=account )
